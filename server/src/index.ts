@@ -3,8 +3,8 @@ import express from "express";
 import { createServer } from "http";
 import { Server } from "socket.io";
 import cors from "cors";
-import { RoomManager } from "./roomManager.js";
-import { fetchRestaurants } from "./placesApi.js";
+import { RoomManager } from "./roomManager.ts";
+import { fetchRestaurants } from "./placesApi.ts";
 
 const app = express();
 const httpServer = createServer(app);

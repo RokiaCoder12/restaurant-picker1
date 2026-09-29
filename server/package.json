@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "nodemon --experimental-specifier-resolution=node --loader ts-node/esm src/index.ts",
+    "dev": "nodemon --exec 'ts-node --esm' src/index.ts",
     "build": "tsc",
     "start": "node build/index.js"
   },

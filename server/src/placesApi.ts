@@ -1,4 +1,4 @@
-import type { CombinedPreferences } from "./roomManager.js";
+import type { CombinedPreferences } from "./roomManager.ts";
 
 const PLACES_URL = "https://maps.googleapis.com/maps/api/place/textsearch/json";
 const DETAILS_URL = "https://maps.googleapis.com/maps/api/place/details/json";
