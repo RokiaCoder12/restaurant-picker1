@@ -1,7 +1,6 @@
 import type { CombinedPreferences } from "./roomManager.js";
 
-const PLACES_URL = "https://maps.googleapis.com/maps/api/place/textsearch/json";
-const DETAILS_URL = "https://maps.googleapis.com/maps/api/place/details/json";
+const PLACES_NEW_URL = "https://places.googleapis.com/v1/places:searchText";
 
 export interface Restaurant {
   placeId: string;
@@ -13,77 +12,97 @@ export interface Restaurant {
   types: string[];
   photoUrl: string | null;
   mapsUrl: string;
-  score: number; // composite ranking score
+  score: number;
 }
+
+const PRICE_MAP: Record<string, number> = {
+  PRICE_LEVEL_FREE: 0,
+  PRICE_LEVEL_INEXPENSIVE: 1,
+  PRICE_LEVEL_MODERATE: 2,
+  PRICE_LEVEL_EXPENSIVE: 3,
+  PRICE_LEVEL_VERY_EXPENSIVE: 4,
+};
 
 export async function fetchRestaurants(prefs: CombinedPreferences): Promise<Restaurant[]> {
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
   if (!apiKey) throw new Error("GOOGLE_MAPS_API_KEY is not set");
 
   const allResults: Restaurant[] = [];
-
-  // Query once per cuisine; deduplicate by placeId
   const cuisinesToQuery = prefs.cuisines.length > 0 ? prefs.cuisines : ["restaurant"];
 
   for (const cuisine of cuisinesToQuery) {
     const query = `${cuisine} restaurant in ${prefs.area}`;
-    const url = new URL(PLACES_URL);
-    url.searchParams.set("query", query);
-    url.searchParams.set("type", "restaurant");
-    url.searchParams.set("key", apiKey);
-    // Map our 1-4 scale to Google's minprice / maxprice (0-4)
-    url.searchParams.set("minprice", String(Math.max(0, prefs.priceRange - 1)));
-    url.searchParams.set("maxprice", String(prefs.priceRange));
 
-    const res = await fetch(url.toString());
-    if (!res.ok) throw new Error(`Places API HTTP ${res.status}`);
-    const data = (await res.json()) as { results: PlaceResult[]; status: string };
-    if (data.status !== "OK" && data.status !== "ZERO_RESULTS") {
-      const full = JSON.stringify(data);
-      console.error(`[places] API error response: ${full}`);
-      throw new Error(`Places API error: ${data.status} — ${full}`);
+    const body = {
+      textQuery: query,
+      includedType: "restaurant",
+      maxResultCount: 10,
+    };
+
+    const res = await fetch(PLACES_NEW_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": apiKey,
+        "X-Goog-FieldMask":
+          "places.id,places.displayName,places.formattedAddress,places.rating,places.userRatingCount,places.priceLevel,places.types,places.photos",
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error(`[places] HTTP ${res.status}: ${errText}`);
+      throw new Error(`Places API HTTP ${res.status}: ${errText}`);
     }
 
-    for (const place of data.results ?? []) {
-      if (allResults.find((r) => r.placeId === place.place_id)) continue;
-      const photoRef = place.photos?.[0]?.photo_reference ?? null;
+    const data = (await res.json()) as { places?: NewPlaceResult[] };
+    console.error(`[places] got ${data.places?.length ?? 0} results for "${query}"`);
+
+    for (const place of data.places ?? []) {
+      if (allResults.find((r) => r.placeId === place.id)) continue;
+
+      const photoName = place.photos?.[0]?.name ?? null;
+      const photoUrl = photoName
+        ? `https://places.googleapis.com/v1/${photoName}/media?maxWidthPx=400&key=${apiKey}`
+        : null;
+
+      const priceLevelNum = place.priceLevel ? (PRICE_MAP[place.priceLevel] ?? null) : null;
+
       allResults.push({
-        placeId: place.place_id,
-        name: place.name,
-        address: place.formatted_address,
+        placeId: place.id,
+        name: place.displayName?.text ?? "Unknown",
+        address: place.formattedAddress ?? "",
         rating: place.rating ?? 0,
-        userRatingsTotal: place.user_ratings_total ?? 0,
-        priceLevel: place.price_level ?? null,
+        userRatingsTotal: place.userRatingCount ?? 0,
+        priceLevel: priceLevelNum,
         types: place.types ?? [],
-        photoUrl: photoRef
-          ? `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference=${photoRef}&key=${apiKey}`
-          : null,
-        mapsUrl: `https://www.google.com/maps/place/?q=place_id:${place.place_id}`,
+        photoUrl,
+        mapsUrl: `https://www.google.com/maps/place/?q=place_id:${place.id}`,
         score: computeScore(place, prefs.priceRange),
       });
     }
   }
 
-  // Sort by composite score descending, return top 5
   return allResults.sort((a, b) => b.score - a.score).slice(0, 5);
 }
 
-function computeScore(place: PlaceResult, targetPrice: number): number {
-  const ratingScore = (place.rating ?? 0) * 20; // 0-100
-  const popularityScore = Math.min(Math.log10((place.user_ratings_total ?? 1) + 1) * 15, 30); // 0-30
-  // Price match: full points if exact, decreasing for distance
-  const priceDiff = Math.abs((place.price_level ?? targetPrice) - targetPrice);
-  const priceScore = Math.max(0, 20 - priceDiff * 7); // 0-20
+function computeScore(place: NewPlaceResult, targetPrice: number): number {
+  const ratingScore = (place.rating ?? 0) * 20;
+  const popularityScore = Math.min(Math.log10((place.userRatingCount ?? 1) + 1) * 15, 30);
+  const numericPrice = place.priceLevel ? (PRICE_MAP[place.priceLevel] ?? targetPrice) : targetPrice;
+  const priceDiff = Math.abs(numericPrice - targetPrice);
+  const priceScore = Math.max(0, 20 - priceDiff * 7);
   return ratingScore + popularityScore + priceScore;
 }
 
-interface PlaceResult {
-  place_id: string;
-  name: string;
-  formatted_address: string;
+interface NewPlaceResult {
+  id: string;
+  displayName?: { text: string };
+  formattedAddress?: string;
   rating?: number;
-  user_ratings_total?: number;
-  price_level?: number;
+  userRatingCount?: number;
+  priceLevel?: string;
   types?: string[];
-  photos?: { photo_reference: string }[];
+  photos?: { name: string }[];
 }
