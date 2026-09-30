@@ -28,10 +28,11 @@ export async function fetchRestaurants(prefs: CombinedPreferences): Promise<Rest
   if (!apiKey) throw new Error("GOOGLE_MAPS_API_KEY is not set");
 
   const allResults: Restaurant[] = [];
-  const cuisinesToQuery = prefs.cuisines.length > 0 ? prefs.cuisines : ["restaurant"];
 
-  for (const cuisine of cuisinesToQuery) {
-    const query = `${cuisine} restaurant in ${prefs.area}`;
+  // Run one search per user's exact cuisine + area combo
+  for (const q of prefs.queries) {
+    const cuisineLabel = q.cuisine || "restaurant";
+    const query = `${cuisineLabel} restaurant in ${q.area}`;
 
     const body = {
       textQuery: query,
@@ -79,7 +80,7 @@ export async function fetchRestaurants(prefs: CombinedPreferences): Promise<Rest
         types: place.types ?? [],
         photoUrl,
         mapsUrl: `https://www.google.com/maps/place/?q=place_id:${place.id}`,
-        score: computeScore(place, prefs.priceRange),
+        score: computeScore(place, q.priceRange),
       });
     }
   }

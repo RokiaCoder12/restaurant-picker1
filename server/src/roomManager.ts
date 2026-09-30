@@ -16,9 +16,7 @@ export interface Room {
 }
 
 export interface CombinedPreferences {
-  cuisines: string[];
-  priceRange: number; // average, rounded
-  area: string; // majority vote or first non-empty
+  queries: { cuisine: string; priceRange: number; area: string }[];
 }
 
 export class RoomManager {
@@ -55,20 +53,9 @@ export class RoomManager {
 
   getCombinedPreferences(code: string): CombinedPreferences {
     const room = this.rooms.get(code)!;
-    const prefs = room.users.map((u) => u.preferences!);
-
-    const cuisines = [...new Set(prefs.map((p) => p.cuisine).filter(Boolean))];
-    const avgPrice = Math.round(prefs.reduce((s, p) => s + p.priceRange, 0) / prefs.length);
-
-    // Majority vote for area; fall back to first value
-    const areaCounts = new Map<string, number>();
-    for (const p of prefs) {
-      if (p.area) areaCounts.set(p.area, (areaCounts.get(p.area) ?? 0) + 1);
-    }
-    const area =
-      [...areaCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? prefs[0].area ?? "";
-
-    return { cuisines, priceRange: avgPrice, area };
+    // Each user's preferences become their own search query
+    const queries = room.users.map((u) => u.preferences!);
+    return { queries };
   }
 
   resetRoom(code: string): Room | null {
