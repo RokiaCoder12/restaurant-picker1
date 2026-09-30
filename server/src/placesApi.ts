@@ -39,7 +39,9 @@ export async function fetchRestaurants(prefs: CombinedPreferences): Promise<Rest
     if (!res.ok) throw new Error(`Places API HTTP ${res.status}`);
     const data = (await res.json()) as { results: PlaceResult[]; status: string };
     if (data.status !== "OK" && data.status !== "ZERO_RESULTS") {
-      throw new Error(`Places API error: ${data.status}`);
+      const full = JSON.stringify(data);
+      console.error(`[places] API error response: ${full}`);
+      throw new Error(`Places API error: ${data.status} — ${full}`);
     }
 
     for (const place of data.results ?? []) {

@@ -60,8 +60,9 @@ io.on("connection", (socket) => {
           const restaurants = await fetchRestaurants(combined);
           io.to(roomCode).emit("results", restaurants);
         } catch (err) {
-          io.to(roomCode).emit("error", "Failed to fetch restaurants. Check your API key.");
-          console.error("[places] error:", err);
+          const msg = err instanceof Error ? err.message : String(err);
+          io.to(roomCode).emit("error", `Failed to fetch restaurants: ${msg}`);
+          console.error("[places] error:", msg);
         } finally {
           io.to(roomCode).emit("searching", false);
         }
